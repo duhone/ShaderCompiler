@@ -14,6 +14,7 @@ add_executable(shadercompiler
 )
 	
 target_link_libraries(shadercompiler 
+	cli11
 	fmt
 	spdlog
 	zstd

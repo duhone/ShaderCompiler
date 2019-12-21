@@ -4,6 +4,7 @@ set(CMAKE_CONFIGURATION_TYPES "Debug;ReleaseD;Profile;Final")
 project (ShaderCompiler)
 
 include (${CMAKE_CURRENT_SOURCE_DIR}/../../core/build/common.cmake)
+include (${CMAKE_CURRENT_SOURCE_DIR}/../../3rdParty/build/build_cli11.cmake)
 include (${CMAKE_CURRENT_SOURCE_DIR}/../../3rdParty/build/build_fmt.cmake)
 include (${CMAKE_CURRENT_SOURCE_DIR}/../../3rdParty/build/build_spdlog.cmake)
 include (${CMAKE_CURRENT_SOURCE_DIR}/../../3rdParty/build/build_zstd.cmake)
