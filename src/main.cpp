@@ -1,10 +1,29 @@
+#include "fmt/format.h"
 #include "cli11/cli11.hpp"
 
 #include "Platform/PathUtils.h"
+#include "Platform/Process.h"
+
+#include <cstdio>
+#include <chrono>
 
 using namespace std;
+using namespace std::chrono_literals;
 namespace fs = std::filesystem;
 using namespace CR;
+
+fs::path CompileShader(const fs::path &input) { 
+  char tempFile[L_tmpnam_s];
+  tmpnam_s(tempFile);
+  fs::path tempPath = fs::temp_directory_path() /= tempFile;
+
+  string cliArgs = fmt::format("{} -o {}", input.string(), tempPath.string());
+
+  auto glslc = Platform::CRCreateProcess("glslc.exe", cliArgs.c_str());
+  glslc->WaitForClose(60s);
+
+  return tempPath;
+}
 
 int main(int argc, char **argv) { 
   CLI::App app{"Shader Compiler"};
@@ -45,6 +64,12 @@ int main(int argc, char **argv) {
   vertPath = Platform::GetCurrentProcessPath() / vertPath;
   fragPath = Platform::GetCurrentProcessPath() / fragPath;
   outputPath = Platform::GetCurrentProcessPath() / outputPath;
+
+  fs::path compiledVertPath = CompileShader(vertPath);
+  fs::path compiledFragPath = CompileShader(fragPath);
+
+  fs::remove(compiledVertPath);
+  fs::remove(compiledFragPath);
 
   return 0; 
 }
