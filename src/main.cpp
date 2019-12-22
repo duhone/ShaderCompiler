@@ -1,6 +1,7 @@
 #include "fmt/format.h"
 #include "cli11/cli11.hpp"
 
+#include "core/Log.h"
 #include "Platform/PathUtils.h"
 #include "Platform/Process.h"
 
@@ -11,6 +12,7 @@ using namespace std;
 using namespace std::chrono_literals;
 namespace fs = std::filesystem;
 using namespace CR;
+using namespace CR::Core;
 
 fs::path CompileShader(const fs::path &input) { 
   char tempFile[L_tmpnam_s];
@@ -20,7 +22,14 @@ fs::path CompileShader(const fs::path &input) {
   string cliArgs = fmt::format("{} -o {}", input.string(), tempPath.string());
 
   auto glslc = Platform::CRCreateProcess("glslc.exe", cliArgs.c_str());
-  glslc->WaitForClose(60s);
+  if (!glslc->WaitForClose(60s)) {
+    Log::Fail("glslc shader compiler did not complete after 60s");
+  }
+  auto exitCode = glslc->GetExitCode();
+
+  if (!exitCode.has_value() || exitCode.value() != 0) {
+    Log::Fail("failed to compile shader {}", input.string());
+  }
 
   return tempPath;
 }
