@@ -2,6 +2,8 @@
 #include "cli11/cli11.hpp"
 
 #include "core/Log.h"
+#include "DataCompression/LosslessCompression.h"
+#include "Platform/MemoryMappedFile.h"
 #include "Platform/PathUtils.h"
 #include "Platform/Process.h"
 
@@ -32,6 +34,31 @@ fs::path CompileShader(const fs::path &input) {
   }
 
   return tempPath;
+}
+
+vector<byte>
+BuildCRSM(const unique_ptr<Platform::IMemoryMappedFile> &vertSpirv,
+          const unique_ptr<Platform::IMemoryMappedFile> &fragSpirv) {
+  vector<byte> uncompressed;
+
+  struct Header {
+    uint32_t VertSize{0};
+    uint32_t FragSize{0};
+  };
+
+  Header header;
+  header.VertSize = (uint32_t)vertSpirv->size();
+  header.FragSize = (uint32_t)fragSpirv->size();
+
+  uncompressed.resize(sizeof(header) + header.VertSize + header.FragSize);
+
+  copy((byte *)&header, (byte *)&header + sizeof(header), begin(uncompressed));
+  copy(vertSpirv->data(), vertSpirv->data() + vertSpirv->size(),
+       begin(uncompressed) + sizeof(header));
+  copy(fragSpirv->data(), fragSpirv->data() + fragSpirv->size(),
+       begin(uncompressed) + sizeof(header) + vertSpirv->size());
+
+  return DataCompression::Compress(data(uncompressed), (uint32_t)size(uncompressed), 18);
 }
 
 int main(int argc, char **argv) { 
@@ -77,6 +104,19 @@ int main(int argc, char **argv) {
   fs::path compiledVertPath = CompileShader(vertPath);
   fs::path compiledFragPath = CompileShader(fragPath);
 
+  auto vertSpirv = Platform::OpenMMapFile(compiledVertPath);
+  auto fragSpirv = Platform::OpenMMapFile(compiledFragPath);
+
+  if (!vertSpirv || !fragSpirv || vertSpirv->size() == 0 ||
+      fragSpirv->size() == 0) {
+    Log::Fail("Failed to load compile spirv for {} and/or {}",
+              vertPath.string(), fragPath.string());
+  }
+
+  vector<byte> crsm = BuildCRSM(vertSpirv, fragSpirv);
+
+  vertSpirv.reset();
+  fragSpirv.reset();
   fs::remove(compiledVertPath);
   fs::remove(compiledFragPath);
 
