@@ -120,5 +120,10 @@ int main(int argc, char **argv) {
   fs::remove(compiledVertPath);
   fs::remove(compiledFragPath);
 
+  FILE *outputFile;
+  fopen_s(&outputFile, outputPath.string().c_str(), "wb");
+  fwrite(crsm.data(), sizeof(byte), crsm.size(), outputFile);
+  fclose(outputFile);
+
   return 0; 
 }
