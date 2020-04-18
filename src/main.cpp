@@ -1,14 +1,18 @@
-#include "fmt/format.h"
-#include "cli11/cli11.hpp"
+﻿#include <3rdParty/cli11.h>
+#include <3rdParty/fmt.h>
 
-#include "core/Log.h"
 #include "DataCompression/LosslessCompression.h"
 #include "Platform/MemoryMappedFile.h"
 #include "Platform/PathUtils.h"
 #include "Platform/Process.h"
+#include "core/BinaryStream.h"
+#include "core/FileHandle.h"
+#include "core/Log.h"
+#include "core/Span.h"
+#include "core/storage_buffer.h"
 
-#include <cstdio>
 #include <chrono>
+#include <cstdio>
 
 using namespace std;
 using namespace std::chrono_literals;
@@ -16,114 +20,109 @@ namespace fs = std::filesystem;
 using namespace CR;
 using namespace CR::Core;
 
-fs::path CompileShader(const fs::path &input) { 
-  char tempFile[L_tmpnam_s];
-  tmpnam_s(tempFile);
-  fs::path tempPath = fs::temp_directory_path() /= tempFile;
+fs::path CompileShader(const fs::path& input) {
+	char tempFile[L_tmpnam_s];
+	tmpnam_s(tempFile);
+	fs::path tempPath = fs::temp_directory_path() /= tempFile;
 
-  string cliArgs = fmt::format("{} -o {}", input.string(), tempPath.string());
+	string cliArgs = fmt::format("{} -o {}", input.string(), tempPath.string());
 
-  auto glslc = Platform::CRCreateProcess("glslc.exe", cliArgs.c_str());
-  if (!glslc->WaitForClose(60s)) {
-    Log::Fail("glslc shader compiler did not complete after 60s");
-  }
-  auto exitCode = glslc->GetExitCode();
+	Platform::Process glslc("glslc.exe", cliArgs.c_str());
+	if(!glslc.WaitForClose(60s)) { Log::Error("glslc shader compiler did not complete after 60s"); }
+	auto exitCode = glslc.GetExitCode();
 
-  if (!exitCode.has_value() || exitCode.value() != 0) {
-    Log::Fail("failed to compile shader {}", input.string());
-  }
+	if(!exitCode.has_value() || exitCode.value() != 0) { Log::Error("failed to compile shader {}", input.string()); }
 
-  return tempPath;
+	return tempPath;
 }
 
-vector<byte>
-BuildCRSM(const unique_ptr<Platform::IMemoryMappedFile> &vertSpirv,
-          const unique_ptr<Platform::IMemoryMappedFile> &fragSpirv) {
-  vector<byte> uncompressed;
+void BuildCRSM(Core::FileHandle& a_file, const Platform::MemoryMappedFile& vertSpirv,
+               const Platform::MemoryMappedFile& fragSpirv) {
+#pragma pack(1)
+	struct Header {
+		uint32_t FourCC{'CRSM'};
+		uint16_t Version{1};
+		uint16_t VertSize{0};
+		uint16_t FragSize{0};
+	};
+#pragma pack()
 
-  struct Header {
-    uint32_t VertSize{0};
-    uint32_t FragSize{0};
-  };
+	Core::Log::Require(vertSpirv.size() < std::numeric_limits<uint16_t>::max(),
+	                   "shaders must be smaller than 64K currently");
+	Core::Log::Require(fragSpirv.size() < std::numeric_limits<uint16_t>::max(),
+	                   "shaders must be smaller than 64K currently");
 
-  Header header;
-  header.VertSize = (uint32_t)vertSpirv->size();
-  header.FragSize = (uint32_t)fragSpirv->size();
+	Header header;
+	header.VertSize = (uint16_t)vertSpirv.size();
+	header.FragSize = (uint16_t)fragSpirv.size();
 
-  uncompressed.resize(sizeof(header) + header.VertSize + header.FragSize);
+	Core::Write(a_file, header);
 
-  copy((byte *)&header, (byte *)&header + sizeof(header), begin(uncompressed));
-  copy(vertSpirv->data(), vertSpirv->data() + vertSpirv->size(),
-       begin(uncompressed) + sizeof(header));
-  copy(fragSpirv->data(), fragSpirv->data() + fragSpirv->size(),
-       begin(uncompressed) + sizeof(header) + vertSpirv->size());
+	Core::storage_buffer<byte> compVert = DataCompression::Compress(Core::Span(vertSpirv.data(), vertSpirv.size()), 18);
+	Core::storage_buffer<byte> compFrag = DataCompression::Compress(Core::Span(fragSpirv.data(), fragSpirv.size()), 18);
 
-  return DataCompression::Compress(data(uncompressed), (uint32_t)size(uncompressed), 18);
+	Core::Write(a_file, compVert);
+	Core::Write(a_file, compFrag);
 }
 
-int main(int argc, char **argv) { 
-  CLI::App app{"Shader Compiler"};
-  string vertFileName = "";
-  string fragFileName = "";
-  string outputFileName = "";
-  app.add_option("-v,--vert", vertFileName,
-                 "Input Vertex Shader. Must have .vert extension")->required();
-  app.add_option("-f,--frag", fragFileName,
-                     "Input Fragment Shader. Must have .frag extension")->required();
-  app.add_option("-o,--output", outputFileName,
-                                     "Output file. Must have .crsm extension")->required();
+int main(int argc, char** argv) {
+	CLI::App app{"Shader Compiler"};
+	string vertFileName   = "";
+	string fragFileName   = "";
+	string outputFileName = "";
+	app.add_option("-v,--vert", vertFileName,
+	               "Input Vertex Shader. File must have .vert extension, can leave off on command line though")
+	    ->required();
+	app.add_option("-f,--frag", fragFileName,
+	               "Input Fragment Shader. File must have .frag extension, can leave off on command line though")
+	    ->required();
+	app.add_option("-o,--output", outputFileName,
+	               "Output file. File must have .crsm extension, can leave off on command line though")
+	    ->required();
 
-  CLI11_PARSE(app, argc, argv);
+	CLI11_PARSE(app, argc, argv);
 
-  fs::path vertPath{vertFileName};
-  fs::path fragPath{fragFileName};
-  fs::path outputPath{outputFileName};
+	fs::path vertPath{vertFileName};
+	fs::path fragPath{fragFileName};
+	fs::path outputPath{outputFileName};
 
-  if (!vertPath.has_extension() || vertPath.extension() != ".vert") {
-    CLI::Error error{"extension",
-                     "Vertex Shader requires .vert file name extension", CLI::ExitCodes::FileError};
-    app.exit(error);
-  }
-  if (!fragPath.has_extension() || fragPath.extension() != ".frag") {
-    CLI::Error error{"extension",
-                     "Fragment Shader requires .frag file name extension",
-                     CLI::ExitCodes::FileError};
-    app.exit(error);
-  }
-  if (!outputPath.has_extension() || outputPath.extension() != ".crsm") {
-    CLI::Error error{"extension",
-                     "Output file requires .crsm file name extension",
-                     CLI::ExitCodes::FileError};
-    app.exit(error);
-  }
+	if(!vertPath.has_extension()) { vertPath.replace_extension(".vert"); }
+	if(!fragPath.has_extension()) { fragPath.replace_extension(".frag"); }
+	if(!outputPath.has_extension()) { outputPath.replace_extension(".crsm"); }
 
-  vertPath = Platform::GetCurrentProcessPath() / vertPath;
-  fragPath = Platform::GetCurrentProcessPath() / fragPath;
-  outputPath = Platform::GetCurrentProcessPath() / outputPath;
+	if(!vertPath.has_extension() || vertPath.extension() != ".vert") {
+		CLI::Error error{"extension", "Vertex Shader requires .vert file name extension", CLI::ExitCodes::FileError};
+		app.exit(error);
+	}
+	if(!fragPath.has_extension() || fragPath.extension() != ".frag") {
+		CLI::Error error{"extension", "Fragment Shader requires .frag file name extension", CLI::ExitCodes::FileError};
+		app.exit(error);
+	}
+	if(!outputPath.has_extension() || outputPath.extension() != ".crsm") {
+		CLI::Error error{"extension", "Output file requires .crsm file name extension", CLI::ExitCodes::FileError};
+		app.exit(error);
+	}
 
-  fs::path compiledVertPath = CompileShader(vertPath);
-  fs::path compiledFragPath = CompileShader(fragPath);
+	vertPath   = Platform::GetCurrentProcessPath() / vertPath;
+	fragPath   = Platform::GetCurrentProcessPath() / fragPath;
+	outputPath = Platform::GetCurrentProcessPath() / outputPath;
 
-  auto vertSpirv = Platform::OpenMMapFile(compiledVertPath);
-  auto fragSpirv = Platform::OpenMMapFile(compiledFragPath);
+	fs::path compiledVertPath = CompileShader(vertPath);
+	fs::path compiledFragPath = CompileShader(fragPath);
 
-  if (!vertSpirv || !fragSpirv || vertSpirv->size() == 0 ||
-      fragSpirv->size() == 0) {
-    Log::Fail("Failed to load compile spirv for {} and/or {}",
-              vertPath.string(), fragPath.string());
-  }
+	{
+		Platform::MemoryMappedFile vertSpirv(compiledVertPath);
+		Platform::MemoryMappedFile fragSpirv(compiledFragPath);
 
-  vector<byte> crsm = BuildCRSM(vertSpirv, fragSpirv);
+		if(vertSpirv.size() == 0 || fragSpirv.size() == 0) {
+			Log::Error("Failed to load compile spirv for {} and/or {}", vertPath.string(), fragPath.string());
+		}
 
-  vertSpirv.reset();
-  fragSpirv.reset();
-  fs::remove(compiledVertPath);
-  fs::remove(compiledFragPath);
+		Core::FileHandle outputFile(outputPath);
+		BuildCRSM(outputFile, vertSpirv, fragSpirv);
+	}
+	fs::remove(compiledVertPath);
+	fs::remove(compiledFragPath);
 
-  FILE *outputFile;
-  fopen_s(&outputFile, outputPath.string().c_str(), "wb");
-  fwrite(crsm.data(), sizeof(byte), crsm.size(), outputFile);
-  fclose(outputFile);
-
-  return 0; 
+	return 0;
 }
