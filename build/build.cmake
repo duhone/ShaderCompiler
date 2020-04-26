@@ -21,11 +21,8 @@ add_executable(shadercompiler
 	
 settingsCR(shadercompiler)	
 			
-add_compile_definitions(DOCTEST_CONFIG_DISABLE)
-
 target_precompile_headers(shadercompiler PRIVATE 
 	<3rdParty/cli11.h>
-	<3rdParty/doctest.h>
 	<3rdParty/fmt.h>
 	<3rdParty/function2.h>
 	<3rdParty/spdlog.h>

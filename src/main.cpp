@@ -1,7 +1,4 @@
-﻿#include <3rdParty/cli11.h>
-#include <3rdParty/fmt.h>
-
-#include "DataCompression/LosslessCompression.h"
+﻿#include "DataCompression/LosslessCompression.h"
 #include "Platform/MemoryMappedFile.h"
 #include "Platform/PathUtils.h"
 #include "Platform/Process.h"
@@ -10,6 +7,12 @@
 #include "core/Log.h"
 #include "core/Span.h"
 #include "core/storage_buffer.h"
+
+#include <3rdParty/cli11.h>
+#include <3rdParty/fmt.h>
+
+#define DOCTEST_CONFIG_IMPLEMENT
+#include <3rdParty/doctest.h>
 
 #include <chrono>
 #include <cstdio>
