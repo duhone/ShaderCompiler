@@ -106,9 +106,7 @@ int main(int argc, char** argv) {
 		app.exit(error);
 	}
 
-	vertPath   = Platform::GetCurrentProcessPath() / vertPath;
-	fragPath   = Platform::GetCurrentProcessPath() / fragPath;
-	outputPath = Platform::GetCurrentProcessPath() / outputPath;
+	filesystem::current_path(Platform::GetCurrentProcessPath());
 
 	fs::path compiledVertPath = CompileShader(vertPath);
 	fs::path compiledFragPath = CompileShader(fragPath);
