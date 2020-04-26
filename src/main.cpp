@@ -113,6 +113,10 @@ int main(int argc, char** argv) {
 	fs::path compiledVertPath = CompileShader(vertPath);
 	fs::path compiledFragPath = CompileShader(fragPath);
 
+	fs::path outputFolder = outputPath;
+	outputFolder.remove_filename();
+	fs::create_directories(outputFolder);
+
 	{
 		Platform::MemoryMappedFile vertSpirv(compiledVertPath);
 		Platform::MemoryMappedFile fragSpirv(compiledFragPath);
