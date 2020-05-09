@@ -106,6 +106,13 @@ int main(int argc, char** argv) {
 		app.exit(error);
 	}
 
+	if(fs::last_write_time(outputPath) > fs::last_write_time(vertPath)) {
+		return 0;    // nothing to do
+	}
+	if(fs::last_write_time(outputPath) > fs::last_write_time(fragPath)) {
+		return 0;    // nothing to do
+	}
+
 	filesystem::current_path(Platform::GetCurrentProcessPath());
 
 	fs::path compiledVertPath = CompileShader(vertPath);
