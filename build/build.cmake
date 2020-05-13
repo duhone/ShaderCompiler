@@ -19,16 +19,9 @@ add_executable(shadercompiler
 	${TEST_FILES}
 )
 	
-settingsCR(shadercompiler)	
-			
-target_precompile_headers(shadercompiler PRIVATE 
-	<3rdParty/cli11.h>
-	<3rdParty/fmt.h>
-	<3rdParty/function2.h>
-	<3rdParty/spdlog.h>
-	<3rdParty/zstd.h>
-)
-
+settingsCR(shadercompiler)		
+createPCH(shadercompiler)	
+		
 target_link_libraries(shadercompiler 
 	cli11
 	doctest
