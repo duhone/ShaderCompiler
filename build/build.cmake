@@ -19,8 +19,8 @@ add_executable(shadercompiler
 	${TEST_FILES}
 )
 	
-settingsCR(shadercompiler)		
-createPCH(shadercompiler)	
+settingsCR(shadercompiler)	
+usePCH(shadercompiler core)
 		
 target_link_libraries(shadercompiler 
 	cli11
